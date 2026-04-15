@@ -3,7 +3,7 @@
 # 🛠️ Скрипт установки WhisperX с диаризацией (Docker + NVIDIA) 🛠️
 #
 # Этот Shell-скрипт полностью автоматизирует подготовку системы Ubuntu
-# (20.04/22.04/24.04) для работы с WhisperX через Docker с ускорением на GPU
+# 25 для работы с WhisperX через Docker с ускорением на GPU
 # от NVIDIA. Он устанавливает все компоненты, настраивает их и создает
 # готовое к работе окружение.
 #
@@ -28,15 +28,15 @@
 #   конфликтов доступа у Docker-контейнера.
 #
 # Порядок использования:
-# 1. Сделайте скрипт исполняемым: chmod +x whisperx_diarization_setup.sh
-# 2. Запустите его: ./whisperx_diarization_setup.sh
+# 1. Сделайте скрипт исполняемым: chmod +x whisperx_diarization_setup_ubuntu25.sh
+# 2. Запустите его: ./whisperx_diarization_setup_ubuntu25.sh
 # 3. После завершения может потребоваться перезагрузка системы.
 
 #  Следить за состоянием GPU: $ watch -n 5 nvidia-smi
 #
 # Автор: Михаил Шардин https://shardin.name/ 
-# Дата создания: 14.09.2025
-# Версия: 2.2
+# Дата создания: 14.04.2026
+# Версия: 2.3
 #
 # Актуальная версия скрипта всегда здесь: https://github.com/empenoso/offline-audio-transcriber
 #
@@ -124,6 +124,7 @@ install_docker() {
     fi
 }
 
+
 install_nvidia_toolkit() {
     log "Установка NVIDIA Container Toolkit..."
     
@@ -131,11 +132,19 @@ install_nvidia_toolkit() {
         success "NVIDIA Container Toolkit уже установлен."
     else
         log "Настройка репозитория NVIDIA..."
-        # Этот метод автоматически определяет версию дистрибутива (ubuntu22.04, ubuntu24.04 и т.д.)
-        curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg \
-          && curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
-            sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
+        # Добавлен флаг --yes для gpg, чтобы избежать вопроса о перезаписи
+        
+        # Ключ
+        curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | \
+            sudo gpg --dearmor --yes -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+
+        # Архитектура
+        ARCH=$(dpkg --print-architecture)
+
+        # Репозиторий (без sed)
+        echo "deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://nvidia.github.io/libnvidia-container/stable/deb/${ARCH} /" | \
             sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list > /dev/null
+
         
         log "Обновление списка пакетов и установка..."
         sudo apt-get update
@@ -145,6 +154,12 @@ install_nvidia_toolkit() {
 
     log "Конфигурирование Docker для работы с NVIDIA GPU..."
     sudo nvidia-ctk runtime configure --runtime=docker
+    
+    # === Генерация CDI профиля для Docker 29+ (Ubuntu 25+) ===
+    log "Генерация CDI профиля для GPU..."
+    sudo mkdir -p /etc/cdi
+    sudo nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml
+    # ==========================================================
     
     log "Перезапуск Docker daemon для применения конфигурации..."
     sudo systemctl restart docker

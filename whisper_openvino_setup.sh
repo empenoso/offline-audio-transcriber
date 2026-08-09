@@ -58,7 +58,7 @@ check_supported_os() {
 
 install_intel_driver() {
     log 'Intel GPU compute driver must be installed in the OS before OpenVINO.'
-    printf 'Packages to install: intel-opencl-icd, intel-level-zero-gpu, level-zero, clinfo\n'
+    printf 'Only the OpenCL packages required by OpenVINO will be installed.\n'
 
     local answer
     if [[ ! -t 0 ]]; then
@@ -68,19 +68,32 @@ install_intel_driver() {
     [[ "$answer" =~ ^[Yy]$ ]] || fail 'Driver installation declined; OpenVINO setup was not started.'
 
     sudo apt-get update
-    sudo apt-get install -y python3 python3-venv ffmpeg pciutils \
-        ocl-icd-libopencl1 intel-opencl-icd intel-level-zero-gpu level-zero clinfo
-    sudo usermod -aG render "$(id -un)"
+    sudo apt-get install -y python3 python3-venv ffmpeg \
+        ocl-icd-libopencl1 intel-opencl-icd
+
+    if getent group render >/dev/null 2>&1; then
+        sudo usermod -aG render "$(id -un)"
+    else
+        warn "The OS has no 'render' group; leaving device permissions unchanged."
+    fi
     ok 'Intel GPU driver packages are installed.'
     warn 'If render-group membership was new, log out and back in (or reboot) before GPU access will work.'
 }
 
-verify_openvino_gpu() {
+verify_environment() {
+    command -v ffmpeg >/dev/null 2>&1 || fail 'ffmpeg is missing after package installation.'
+    [[ -x "$VENV_DIR/bin/optimum-cli" ]] || fail 'optimum-cli is missing from the Python environment.'
+
     "$VENV_DIR/bin/python" - <<'PY'
+import numpy
 import openvino as ov
+import openvino_genai
 
 core = ov.Core()
 devices = core.available_devices
+print("NumPy version:", numpy.__version__)
+print("OpenVINO version:", ov.__version__)
+print("OpenVINO GenAI import: OK")
 print("OpenVINO devices:", ", ".join(devices) or "none")
 if not any(device == "GPU" or device.startswith("GPU.") for device in devices):
     raise SystemExit("Intel GPU is not visible to OpenVINO. Log out/in (or reboot), then run this installer again.")
@@ -104,7 +117,7 @@ main() {
     "$VENV_DIR/bin/python" -m pip install \
         openvino openvino-genai 'optimum-intel[openvino]' numpy
 
-    verify_openvino_gpu
+    verify_environment
     ok 'OpenVINO Intel GPU environment is ready.'
     printf '\nActivate it with:\n  source %q/bin/activate\n' "$VENV_DIR"
     printf 'Run transcription with:\n  python whisper_transcribe_openvino.py ./audio medium ./results\n'

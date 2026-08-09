@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import subprocess
 import sys
 import time
@@ -15,29 +14,40 @@ from typing import Any
 import numpy as np
 import openvino as ov
 import openvino_genai as ov_genai
+from huggingface_hub import snapshot_download
 
 
 ROOT = Path(__file__).resolve().parent
 MODEL_ALIASES = {
-    "tiny": "openai/whisper-tiny",
-    "base": "openai/whisper-base",
-    "small": "openai/whisper-small",
-    "medium": "openai/whisper-medium",
-    "large": "openai/whisper-large-v3",
-    "large-v3": "openai/whisper-large-v3",
+    "tiny": "OpenVINO/whisper-tiny-fp16-ov",
+    "base": "OpenVINO/whisper-base-fp16-ov",
+    "small": "OpenVINO/whisper-small-fp16-ov",
+    "medium": "OpenVINO/whisper-medium-fp16-ov",
+    "large": "OpenVINO/whisper-large-v3-fp16-ov",
+    "large-v3": "OpenVINO/whisper-large-v3-fp16-ov",
 }
 AUDIO_SUFFIXES = {".wav", ".mp3", ".m4a", ".flac", ".ogg", ".opus", ".aac"}
+REQUIRED_MODEL_FILES = {
+    "openvino_encoder_model.xml",
+    "openvino_encoder_model.bin",
+    "openvino_decoder_model.xml",
+    "openvino_decoder_model.bin",
+    "openvino_tokenizer.xml",
+    "openvino_tokenizer.bin",
+    "openvino_detokenizer.xml",
+    "openvino_detokenizer.bin",
+}
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("input", nargs="?", default=".", type=Path, help="audio directory")
-    parser.add_argument("model", nargs="?", default="medium", help="Whisper size, HF model ID, or converted model directory")
+    parser.add_argument("model", nargs="?", default="medium", help="Whisper size, OpenVINO HF model ID, or model directory")
     parser.add_argument("output", nargs="?", default=Path("transcripts-openvino"), type=Path)
     parser.add_argument("--language", default="ru", help="Whisper language code, or 'auto'")
     parser.add_argument("--device", default="GPU", choices=("GPU", "AUTO", "CPU"))
     parser.add_argument("--model-dir", type=Path, default=ROOT / ".openvino_models")
-    parser.add_argument("--offline", action="store_true", help="never download/convert a missing model")
+    parser.add_argument("--offline", action="store_true", help="never download a missing model")
     parser.add_argument("--check", action="store_true", help="show OpenVINO devices and exit")
     return parser.parse_args()
 
@@ -63,7 +73,7 @@ def model_location(model: str, model_root: Path) -> Path:
 
 def ensure_model(model: str, model_root: Path, offline: bool) -> Path:
     destination = model_location(model, model_root)
-    if destination.is_dir() and any(destination.glob("*.xml")):
+    if destination.is_dir() and all((destination / name).is_file() for name in REQUIRED_MODEL_FILES):
         return destination
     if Path(model).expanduser().exists():
         raise RuntimeError(f"Converted OpenVINO model is incomplete: {destination}")
@@ -74,16 +84,8 @@ def ensure_model(model: str, model_root: Path, offline: bool) -> Path:
     destination.parent.mkdir(parents=True, exist_ok=True)
     cache = ROOT / ".cache" / "huggingface"
     cache.mkdir(parents=True, exist_ok=True)
-    env = os.environ.copy()
-    env.update({"HF_HOME": str(cache), "HUGGINGFACE_HUB_CACHE": str(cache / "hub")})
-    print(f"Downloading and converting {model_id} to {destination} (first run only)...")
-    optimum_cli = Path(sys.executable).with_name("optimum-cli")
-    subprocess.run(
-        [str(optimum_cli), "export", "openvino",
-         "--model", model_id, "--task", "automatic-speech-recognition-with-past", str(destination)],
-        check=True,
-        env=env,
-    )
+    print(f"Downloading ready-to-use OpenVINO model {model_id} to {destination} (first run only)...")
+    snapshot_download(repo_id=model_id, local_dir=destination, cache_dir=cache)
     return destination
 
 

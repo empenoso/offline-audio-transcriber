@@ -1,6 +1,7 @@
 .venv/
 .cache/
 .openvino_models/
+.openvino-install-state/
 __pycache__/
 *.pyc
 transcripts/

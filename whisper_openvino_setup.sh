@@ -5,6 +5,7 @@ set -euo pipefail
 
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 VENV_DIR="$SCRIPT_DIR/.venv-openvino"
+STATE_DIR="$SCRIPT_DIR/.openvino-install-state"
 export PIP_CACHE_DIR="$SCRIPT_DIR/.cache/pip"
 
 log() { printf '[INFO] %s\n' "$*"; }
@@ -67,11 +68,27 @@ install_intel_driver() {
     read -r -p 'Install the Intel GPU driver packages now? [y/N] ' answer
     [[ "$answer" =~ ^[Yy]$ ]] || fail 'Driver installation declined; OpenVINO setup was not started.'
 
+    mkdir -p "$STATE_DIR"
+    dpkg-query -W -f='${binary:Package}\n' 2>/dev/null | sort -u > "$STATE_DIR/packages.before"
+
     sudo apt-get update
     sudo apt-get install -y python3 python3-venv ffmpeg \
         ocl-icd-libopencl1 intel-opencl-icd
 
+    dpkg-query -W -f='${binary:Package}\n' 2>/dev/null | sort -u > "$STATE_DIR/packages.after"
+    comm -13 "$STATE_DIR/packages.before" "$STATE_DIR/packages.after" > "$STATE_DIR/packages.new"
+    if [[ -f "$STATE_DIR/apt-packages.txt" ]]; then
+        sort -u "$STATE_DIR/apt-packages.txt" "$STATE_DIR/packages.new" > "$STATE_DIR/apt-packages.merged"
+        mv "$STATE_DIR/apt-packages.merged" "$STATE_DIR/apt-packages.txt"
+    else
+        mv "$STATE_DIR/packages.new" "$STATE_DIR/apt-packages.txt"
+    fi
+    rm -f "$STATE_DIR/packages.before" "$STATE_DIR/packages.after" "$STATE_DIR/packages.new"
+
     if getent group render >/dev/null 2>&1; then
+        if ! id -nG "$(id -un)" | tr ' ' '\n' | grep -qx render; then
+            : > "$STATE_DIR/render-group-added"
+        fi
         sudo usermod -aG render "$(id -un)"
     else
         warn "The OS has no 'render' group; leaving device permissions unchanged."
@@ -82,18 +99,19 @@ install_intel_driver() {
 
 verify_environment() {
     command -v ffmpeg >/dev/null 2>&1 || fail 'ffmpeg is missing after package installation.'
-    [[ -x "$VENV_DIR/bin/optimum-cli" ]] || fail 'optimum-cli is missing from the Python environment.'
 
     "$VENV_DIR/bin/python" - <<'PY'
 import numpy
 import openvino as ov
 import openvino_genai
+import huggingface_hub
 
 core = ov.Core()
 devices = core.available_devices
 print("NumPy version:", numpy.__version__)
 print("OpenVINO version:", ov.__version__)
 print("OpenVINO GenAI import: OK")
+print("Hugging Face Hub import: OK")
 print("OpenVINO devices:", ", ".join(devices) or "none")
 if not any(device == "GPU" or device.startswith("GPU.") for device in devices):
     raise SystemExit("Intel GPU is not visible to OpenVINO. Log out/in (or reboot), then run this installer again.")
@@ -112,16 +130,20 @@ main() {
     install_intel_driver
 
     log "Creating Python environment at $VENV_DIR"
+    if [[ -d "$VENV_DIR" ]]; then
+        log 'Removing the previous dedicated OpenVINO environment to avoid stale dependencies.'
+        find "$VENV_DIR" -depth -delete
+    fi
     python3 -m venv "$VENV_DIR"
     "$VENV_DIR/bin/python" -m pip install --upgrade pip
     "$VENV_DIR/bin/python" -m pip install \
-        openvino openvino-genai 'optimum-intel[openvino]' numpy
+        openvino openvino-genai huggingface-hub numpy
 
     verify_environment
     ok 'OpenVINO Intel GPU environment is ready.'
     printf '\nActivate it with:\n  source %q/bin/activate\n' "$VENV_DIR"
     printf 'Run transcription with:\n  python whisper_transcribe_openvino.py ./audio medium ./results\n'
-    printf 'The selected Whisper model is downloaded and converted on its first run.\n'
+    printf 'A ready-to-use OpenVINO Whisper model is downloaded on its first run.\n'
 }
 
 main "$@"

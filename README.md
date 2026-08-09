@@ -54,6 +54,7 @@ chmod +x choose_transcription_setup.sh
 | **Скрипт запуска** | `whisper_transcribe.py` | `whisper_transcribe_openvino.py` | `whisperx_diarization.py` |
 | **CUDA нужна** | Да | Нет | Да |
 | **Диаризация** | Нет | Нет | Да |
+| **Автоматическое удаление** | Пока нет | `whisper_openvino_uninstall.sh` | Пока нет |
 
 Окружения `.venv` и `.venv-openvino` независимы. Перед сменой варианта выполните `deactivate`, затем активируйте нужное окружение. Не запускайте Intel-скрипт из `.venv` и NVIDIA-скрипт из `.venv-openvino`.
 
@@ -181,6 +182,8 @@ python whisper_transcribe_openvino.py ./audio medium ./results --offline
 
 ### Удаление Intel/OpenVINO
 
+> **Важно:** автоматический деинсталлятор пока реализован только для варианта Intel/OpenVINO. Он не удаляет NVIDIA-драйверы, CUDA, окружение `.venv`, Docker, NVIDIA Container Toolkit или компоненты WhisperX.
+
 Установщик записывает в `.openvino-install-state` только те APT-пакеты, которых не было в системе до установки. Поэтому деинсталлятор не затрагивает ранее установленные пользовательские пакеты.
 
 ```bash
@@ -195,6 +198,8 @@ chmod +x whisper_openvino_uninstall.sh
 ```
 
 Если OpenVINO устанавливался старой версией скрипта, списка новых APT-пакетов нет. В этом случае деинсталлятор безопасно удалит виртуальное окружение, но не будет угадывать, какие системные пакеты можно удалить.
+
+Для NVIDIA/CUDA и WhisperX автоматическое удаление пока не предусмотрено. Не используйте `whisper_openvino_uninstall.sh` для этих вариантов: он работает только с `.venv-openvino` и состоянием установки Intel/OpenVINO.
 
 ---
 

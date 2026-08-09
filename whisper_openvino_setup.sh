@@ -13,17 +13,27 @@ warn() { printf '[WARNING] %s\n' "$*" >&2; }
 fail() { printf '[ERROR] %s\n' "$*" >&2; exit 1; }
 
 intel_gpu_description() {
+    local output=""
     if command -v lspci >/dev/null 2>&1; then
-        lspci -nn | awk 'BEGIN {IGNORECASE=1} /VGA compatible controller|3D controller|Display controller/ && /Intel|\[8086:/ {print}'
-        return
+        output=$(lspci -nn | awk 'BEGIN {IGNORECASE=1} /VGA compatible controller|3D controller|Display controller/ && /Intel|\[8086:/ {print}')
+        [[ -n "$output" ]] && printf '%s\n' "$output"
+    else
+        local device vendor class
+        for device in /sys/bus/pci/devices/*; do
+            [[ -r "$device/vendor" && -r "$device/class" ]] || continue
+            vendor=$(<"$device/vendor")
+            class=$(<"$device/class")
+            [[ "$vendor" == "0x8086" && "$class" == 0x03* ]] && printf 'Intel PCI display device at %s\n' "${device##*/}"
+        done
     fi
 
-    local device vendor class
-    for device in /sys/bus/pci/devices/*; do
-        [[ -r "$device/vendor" && -r "$device/class" ]] || continue
-        vendor=$(<"$device/vendor")
-        class=$(<"$device/class")
-        [[ "$vendor" == "0x8086" && "$class" == 0x03* ]] && printf 'Intel display device at %s\n' "${device##*/}"
+    local node render_vendor
+    for node in /sys/class/drm/renderD*/device/vendor; do
+        [[ -r "$node" ]] || continue
+        render_vendor=$(<"$node")
+        if [[ "$render_vendor" == "0x8086" ]]; then
+            printf 'Intel GPU render device: /dev/dri/%s\n' "$(basename "$(dirname "$(dirname "$node")")")"
+        fi
     done
     return 0
 }
@@ -72,8 +82,8 @@ main() {
 
     local gpu_info
     gpu_info=$(intel_gpu_description)
-    [[ -n "$gpu_info" ]] || fail 'No Intel VGA/3D/display controller was detected.'
-    ok 'Intel GPU hardware detected:'
+    [[ -n "$gpu_info" ]] || fail 'No Intel PCI display controller or Intel GPU render device was detected.'
+    ok 'Intel GPU interface detected:'
     printf '%s\n' "$gpu_info"
 
     install_intel_driver

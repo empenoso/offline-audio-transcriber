@@ -60,12 +60,12 @@ main() {
 
     printf 'GPU transcription setup advisor\n'
     printf '===============================\n'
-    printf 'NVIDIA display hardware: %s\n' "$has_nvidia"
+    printf 'NVIDIA PCI display controller: %s\n' "$has_nvidia"
     printf 'NVIDIA CUDA driver usable: %s\n' "$nvidia_driver"
-    printf 'Intel display hardware:  %s\n' "$has_intel"
-    printf 'Intel render device present: %s\n\n' "$intel_driver"
+    printf 'Intel PCI display controller:  %s\n' "$has_intel"
+    printf 'Intel GPU render/compute device: %s\n\n' "$intel_driver"
 
-    if [[ "$has_nvidia" == true && "$has_intel" == true ]]; then
+    if [[ "$has_nvidia" == true && ( "$has_intel" == true || "$intel_driver" == true ) ]]; then
         printf 'Both supported GPU types were detected.\n'
         if [[ "$nvidia_driver" == true ]]; then
             printf 'Recommended: NVIDIA/CUDA (its driver is already usable):\n  %s\n' "$(relative_name "$NVIDIA_SETUP")"
@@ -77,7 +77,7 @@ main() {
         printf 'Alternative Intel/OpenVINO setup:\n  %s\n' "$(relative_name "$INTEL_SETUP")"
     elif [[ "$has_nvidia" == true ]]; then
         printf 'Use the NVIDIA/CUDA setup:\n  %s\n' "$(relative_name "$NVIDIA_SETUP")"
-    elif [[ "$has_intel" == true ]]; then
+    elif [[ "$has_intel" == true || "$intel_driver" == true ]]; then
         printf 'Use the Intel/OpenVINO setup:\n  %s\n' "$(relative_name "$INTEL_SETUP")"
     else
         printf 'No supported Intel or NVIDIA GPU was detected.\n'

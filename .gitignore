@@ -1,0 +1,8 @@
+.venv/
+.cache/
+.openvino_models/
+__pycache__/
+*.pyc
+transcripts/
+transcripts-openvino/
+AGENTS.md

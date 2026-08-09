@@ -14,6 +14,7 @@ fail() { printf '[ERROR] %s\n' "$*" >&2; exit 1; }
 
 intel_gpu_description() {
     local output=""
+    local render_found=false
     if command -v lspci >/dev/null 2>&1; then
         output=$(lspci -nn | awk 'BEGIN {IGNORECASE=1} /VGA compatible controller|3D controller|Display controller/ && /Intel|\[8086:/ {print}')
         [[ -n "$output" ]] && printf '%s\n' "$output"
@@ -33,8 +34,17 @@ intel_gpu_description() {
         render_vendor=$(<"$node")
         if [[ "$render_vendor" == "0x8086" ]]; then
             printf 'Intel GPU render device: /dev/dri/%s\n' "$(basename "$(dirname "$(dirname "$node")")")"
+            render_found=true
         fi
     done
+
+    # WSL, containers, and VMs may expose the Intel compute runtime while hiding
+    # the underlying PCI device and its sysfs vendor attribute.
+    if [[ "$render_found" == false ]] && command -v clinfo >/dev/null 2>&1; then
+        if clinfo -l 2>/dev/null | grep -qi intel; then
+            printf 'Intel GPU compute runtime reported by clinfo\n'
+        fi
+    fi
     return 0
 }
 
@@ -82,7 +92,7 @@ main() {
 
     local gpu_info
     gpu_info=$(intel_gpu_description)
-    [[ -n "$gpu_info" ]] || fail 'No Intel PCI display controller or Intel GPU render device was detected.'
+    [[ -n "$gpu_info" ]] || fail 'No Intel PCI controller, render device, or Intel compute runtime was detected.'
     ok 'Intel GPU interface detected:'
     printf '%s\n' "$gpu_info"
 
